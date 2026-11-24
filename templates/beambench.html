@@ -78,6 +78,13 @@
               <label data-for="falloff">Band step <input type="number" min="4" max="512" name="radius_step" required></label>
             </div>
           </fieldset>
+          <fieldset id="placement-fields" hidden><legend>Placement finder <small>on the profile line</small></legend>
+            <div class="fieldgrid">
+              <label data-for="across down">Minimum brightness <input type="number" min="0" max="255" step="any" name="place_min" required></label>
+              <label data-for="across down">Shortest width, px <input type="number" min="1" step="1" name="place_width" required></label>
+              <label data-for="across down">Evenness tolerance <input type="number" min="0" max="255" step="any" name="place_tol" required></label>
+            </div>
+          </fieldset>
           <div class="form-actions"><button type="submit" class="primary">Measure</button><button type="button" id="save-setup">Save setup</button></div>
         </form>
         <form id="coordinates" class="coordinate">
@@ -99,6 +106,7 @@
 
     <section id="results" class="results card" aria-labelledby="result-title">
       <div class="results-head"><h2 id="result-title">Horizontal profile</h2><span id="result-source"></span></div>
+      <div id="placement" class="placement" hidden></div>
       <div id="measures" class="measures"></div>
       <canvas id="chart" width="1000" height="126" aria-label="Brightness across sampled positions" role="img" hidden></canvas>
       <div id="rows" class="table-scroll"></div>

@@ -65,7 +65,22 @@ def defaults(width, height):
         "box": [0, 0, width - 1, height - 1], "row": height // 2, "column": width // 2,
         "origin": [width // 2, height // 2], "source": "a", "threshold": 140,
         "clip_low": 10, "clip_high": 245, "radius_step": 20,
+        "place_min": 120, "place_width": 200, "place_tol": 12, "place_segment": None,
     }
+
+
+def segment(value, span):
+    if value is None:
+        return None
+    if not isinstance(value, list) or len(value) != 2:
+        raise Invalid("The adopted placement segment needs two profile positions.")
+    start, end = value
+    if isinstance(start, bool) or isinstance(end, bool) or not all(
+            isinstance(item, int) for item in (start, end)):
+        raise Invalid("The adopted placement segment needs whole profile positions.")
+    if not 0 <= start <= end < span:
+        raise Invalid("The adopted placement segment must lie inside the measured line.")
+    return [start, end]
 
 
 def settings(record, submitted):
@@ -79,6 +94,11 @@ def settings(record, submitted):
     clip_high = number(options["clip_high"], 1, 255, "Highlight level")
     if clip_low >= clip_high:
         raise Invalid("The shadow level must be below the highlight level.")
+    place_min = number(options["place_min"], 0, 255, "Minimum brightness")
+    place_width = integer(options["place_width"], 1, max(width, height), "Shortest placement width")
+    place_tol = number(options["place_tol"], 0, 255, "Evenness tolerance")
+    span = max(right - left, bottom - top) + 1
+    place_segment = segment(options.get("place_segment"), span)
     return {
         "box": [left, top, right, bottom],
         "row": integer(options["row"], top, bottom, "Profile row"),
@@ -87,6 +107,8 @@ def settings(record, submitted):
         "source": role, "threshold": number(options["threshold"], 0, 255, "Light level"),
         "clip_low": clip_low, "clip_high": clip_high,
         "radius_step": integer(options["radius_step"], 4, 512, "Radial step"),
+        "place_min": place_min, "place_width": place_width, "place_tol": place_tol,
+        "place_segment": place_segment,
     }
 
 

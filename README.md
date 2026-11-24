@@ -12,10 +12,20 @@ to stop the service while retaining the named volume.
 3. Use **Pixel probe** or click a result row to check its position and RGB.
    Inspect the grid illumination map, thresholded footprint, radial falloff,
    clipped tones, color cast, or aligned photo comparison.
-4. Save a setup to use those positions and thresholds again. Save an inspection
+4. On a horizontal or vertical profile, open the **Placement finder** and enter
+   the minimum brightness, shortest usable width, and evenness tolerance. The
+   desk scans the full profile line, splits it at dark trenches, and recommends
+   a continuously lit segment whose width and fluctuation reserve balance best.
+   The selected range is marked on the photo and chart with its width, brightness
+   swing, tolerance reserve, and reason. **Adopt this segment** to narrow the
+   profile, table, and CSV to that range on the original coordinates; moving the
+   line, changing its geometry, or leaving the saved inspection returns to the
+   full line. When no segment qualifies, the existing full-line measurement is
+   kept unchanged.
+5. Save a setup to use those positions and thresholds again. Save an inspection
    to keep its original source, sampled rows, and marked PNG. Use the direct
    download links after saving or reopening an inspection.
-5. Use **Photo preparation** to process a copy, then attach a prepared output
+6. Use **Photo preparation** to process a copy, then attach a prepared output
    as the aligned reference. Preserve the original framing and dimensions.
 
 Photos are immutable, opaque, displayed-orientation RGB. Limits are 14 MiB

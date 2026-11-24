@@ -2,7 +2,7 @@ const el = id => document.getElementById(id);
 const settings = el("settings");
 const fields = settings.elements;
 const state = {panel: null, result: null, report: null, mode: "across", tool: "probe",
-  boxStart: null, highlight: null, generation: 0};
+  boxStart: null, highlight: null, generation: 0, segment: null};
 const base = "/beam/panels";
 const toolNotes = {
   probe:"Click the photo to read its RGB and brightness.", box:"Pick two corners of the inspection box.",
@@ -83,7 +83,8 @@ async function showLibrary() {
 
 function fill(current) {
   const {box, origin} = current;
-  for (const key of ["source", "row", "column", "threshold", "clip_low", "clip_high", "radius_step"]) {
+  for (const key of ["source", "row", "column", "threshold", "clip_low", "clip_high", "radius_step",
+      "place_min", "place_width", "place_tol"]) {
     fields[key].value = current[key];
   }
   [fields.left.value, fields.top.value, fields.right.value, fields.bottom.value] = box;
@@ -96,13 +97,20 @@ function chosen() {
     box:["left", "top", "right", "bottom"].map(val), row:val("row"), column:val("column"),
     origin:["originX", "originY"].map(val), source:fields.source.value, threshold:val("threshold"),
     clip_low:val("clip_low"), clip_high:val("clip_high"), radius_step:val("radius_step"),
+    place_min:val("place_min"), place_width:val("place_width"), place_tol:val("place_tol"),
+    place_segment:state.segment,
   };
 }
 
 function updateControls() {
   const visible = [...settings.querySelectorAll("[data-for]")];
-  for (const label of visible) label.hidden = label.dataset.for !== state.mode;
-  el("sampling-fields").hidden = visible.every(label => label.hidden);
+  for (const label of visible) {
+    label.hidden = !label.dataset.for.split(/\s+/).includes(state.mode);
+  }
+  el("sampling-fields").hidden = visible
+    .filter(label => label.closest("#sampling-fields"))
+    .every(label => label.hidden);
+  el("placement-fields").hidden = !["across", "down"].includes(state.mode) || Boolean(state.report);
   fields.mode.value = state.mode;
   for (const control of el("tools").querySelectorAll("button")) {
     control.hidden = Boolean(state.report) && control.dataset.tool !== "probe";
@@ -138,6 +146,7 @@ async function open(id, existing = null) {
   state.result = state.report = state.boxStart = state.highlight = null;
   state.mode = "across";
   state.tool = "probe";
+  state.segment = null;
   localStorage.setItem("beambench-panel", panel.id);
   el("empty").hidden = true;
   el("desk").hidden = false;
@@ -160,6 +169,23 @@ function trace(canvas, mark) {
     ctx.fillRect(l, t, r - l + 1, b - t + 1);
     ctx.strokeStyle = "rgba(225,232,244,.57)";
     ctx.rect(l, t, r - l + 1, b - t + 1);
+    ctx.stroke();
+  } else if (mark.kind === "segment") {
+    const [start, end] = mark.points;
+    const width = state.panel.width;
+    ctx.strokeStyle = "#7ff2a4";
+    ctx.lineWidth = Math.max(2, width / 240);
+    ctx.beginPath();
+    ctx.moveTo(...start);
+    ctx.lineTo(...end);
+    ctx.stroke();
+    const tick = Math.max(5, width / 110);
+    for (const [x, y] of [start, end]) {
+      ctx.beginPath();
+      ctx.moveTo(x, y - tick);
+      ctx.lineTo(x, y + tick);
+      ctx.stroke();
+    }
   } else {
     ctx.strokeStyle = "#ffd065";
     if (mark.kind === "circle") {
@@ -170,8 +196,8 @@ function trace(canvas, mark) {
       for (const point of remaining) ctx.lineTo(...point);
       if (mark.kind === "outline") ctx.closePath();
     }
+    ctx.stroke();
   }
-  ctx.stroke();
 }
 
 function drawMarks() {
@@ -198,13 +224,27 @@ function drawMarks() {
   }
 }
 
-function drawChart(values) {
+function drawChart(values, shade = null) {
   const canvas = el("chart");
   canvas.hidden = !values.length;
   if (!values.length) return;
   const ctx = canvas.getContext("2d");
   const {width, height} = canvas;
   ctx.clearRect(0, 0, width, height);
+  const pointX = index => 33 + (width - 43) * index / Math.max(1, values.length - 1);
+  if (shade) {
+    ctx.fillStyle = "rgba(127,242,164,.14)";
+    ctx.fillRect(pointX(shade.start), 6, pointX(shade.end) - pointX(shade.start), height - 12);
+    ctx.strokeStyle = "rgba(127,242,164,.55)";
+    ctx.setLineDash([4, 3]);
+    for (const index of [shade.start, shade.end]) {
+      ctx.beginPath();
+      ctx.moveTo(pointX(index), 6);
+      ctx.lineTo(pointX(index), height - 6);
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+  }
   for (const level of [0, 64, 128, 192, 255]) {
     const y = 11 + (255 - level) * .39;
     ctx.strokeStyle = "#303a4b";
@@ -220,7 +260,7 @@ function drawChart(values) {
   ctx.lineWidth = 2.3;
   ctx.beginPath();
   values.forEach((value, index) => {
-    const x = 33 + (width - 43) * index / Math.max(1, values.length - 1);
+    const x = pointX(index);
     const y = 11 + (255 - value) * .39;
     if (index) ctx.lineTo(x, y);
     else ctx.moveTo(x, y);
@@ -258,6 +298,134 @@ function table(display) {
   list(el("rows"), [element]);
 }
 
+function metric(label, value) {
+  const item = document.createElement("div");
+  item.className = "place-metric";
+  const caption = document.createElement("span");
+  caption.textContent = label;
+  const amount = document.createElement("strong");
+  amount.textContent = value;
+  item.append(caption, amount);
+  return item;
+}
+
+function showPlacement(display) {
+  const card = el("placement");
+  const finder = display.placement;
+  const profileMode = ["across", "down"].includes(display.mode);
+  card.hidden = !profileMode || !finder;
+  if (!profileMode || !finder) return;
+  card.replaceChildren();
+  const head = document.createElement("div");
+  head.className = "place-head";
+  const title = document.createElement("h3");
+  title.textContent = "Placement finder";
+  head.append(title);
+  card.append(head);
+
+  if (display.placement_adopted) {
+    card.classList.add("adopted");
+    const [start, end] = state.segment ?? [];
+    const banner = document.createElement("div");
+    banner.className = "place-banner";
+    banner.textContent = "Adopted segment — profile, table and CSV measure this range only on original coordinates.";
+    const metrics = document.createElement("div");
+    metrics.className = "place-metrics";
+    metrics.append(
+      metric("Profile positions", (start ?? "?") + " – " + (end ?? "?")),
+      metric("Width px", (end ?? 0) - (start ?? 0) + 1),
+      metric("Brightness min", display.summary ? Math.min(...display.chart).toFixed(2) : "–"),
+      metric("Brightness max", display.summary ? Math.max(...display.chart).toFixed(2) : "–"),
+      metric("Swing", display.summary.Spread)
+    );
+    const clearBtn = document.createElement("button");
+    clearBtn.type = "button";
+    clearBtn.textContent = "Clear segment · measure full line";
+    clearBtn.onclick = run(clearSegment);
+    if (state.report) clearBtn.disabled = true;
+    card.append(banner, metrics, clearBtn);
+    return;
+  }
+  card.classList.remove("adopted");
+  const selected = finder.selected;
+  if (!selected) {
+    const empty = document.createElement("p");
+    empty.className = "place-empty";
+    empty.textContent = finder.message || "No continuous segment meets all three requirements.";
+    card.append(empty);
+    if (finder.runs?.length) {
+      const runs = document.createElement("p");
+      runs.className = "place-runs";
+      runs.textContent = finder.runs.length + " lit run(s) separated below " + finder.minimum +
+        "; none reaches the " + finder.min_width + " px shortest width within the tolerance.";
+      card.append(runs);
+    }
+    return;
+  }
+  const best = finder.candidates[0];
+  const metrics = document.createElement("div");
+  metrics.className = "place-metrics";
+  metrics.append(
+    metric("Positions", selected.start + " – " + selected.end),
+    metric("Width px", best.width),
+    metric("Min / max", best.min + " / " + best.max),
+    metric("Swing", best.spread),
+    metric("Tolerance reserve", best.margin),
+    metric("Match score", best.score)
+  );
+  const why = document.createElement("p");
+  why.className = "place-reason";
+  why.textContent = "Why here: " + best.reason + " Score equally balances width vs. reserve within this line's options (" +
+    Math.round(best.width_score * 100) + "% width position, " +
+    Math.round(best.margin_score * 100) + "% reserve position).";
+  const adoptBtn = document.createElement("button");
+  adoptBtn.type = "button";
+  adoptBtn.className = "primary";
+  adoptBtn.textContent = "Adopt this segment";
+  adoptBtn.onclick = run(() => adoptSegment(selected.start, selected.end));
+  card.append(metrics, why, adoptBtn);
+
+  if (finder.candidates.length > 1) {
+    const alternatives = document.createElement("div");
+    alternatives.className = "place-alts";
+    const caption = document.createElement("small");
+    caption.textContent = "Alternative continuous runs (wider vs. flatter trade-off):";
+    alternatives.append(caption);
+    for (const candidate of finder.candidates.slice(1)) {
+      const row = document.createElement("button");
+      row.type = "button";
+      row.className = "place-alt";
+      row.innerHTML = "<span>" + candidate.start + " – " + candidate.end + " · " + candidate.width +
+        " px</span><span>swing " + candidate.spread + " · reserve " + candidate.margin +
+        " · score " + candidate.score + "</span>";
+      row.onclick = run(() => adoptSegment(candidate.start, candidate.end));
+      alternatives.append(row);
+    }
+    card.append(alternatives);
+  }
+  if (finder.runs.length > 1) {
+    const note = document.createElement("p");
+    note.className = "place-runs";
+    note.textContent = finder.runs.length + " lit runs on this line; dark trenches below " +
+      finder.minimum + " are kept separate.";
+    card.append(note);
+  }
+}
+
+async function adoptSegment(start, end) {
+  if (state.report) return;
+  state.segment = [start, end];
+  await measure();
+  notice("Segment adopted — the profile and CSV now measure this range only.");
+}
+
+async function clearSegment() {
+  if (state.report) return;
+  state.segment = null;
+  await measure();
+  notice("Full-line measurement restored.");
+}
+
 function show(display) {
   state.result = display;
   el("result-title").textContent = display.heading;
@@ -273,8 +441,17 @@ function show(display) {
     return card;
   });
   list(el("measures"), measures);
-  drawChart(display.chart);
+  let shade = null;
+  if (["across", "down"].includes(display.mode) && display.placement) {
+    if (display.placement_adopted && state.segment) {
+      shade = {start: 0, end: display.chart.length - 1};
+    } else if (display.placement.selected) {
+      shade = display.placement.selected;
+    }
+  }
+  drawChart(display.chart, shade);
   table(display);
+  showPlacement(display);
   drawMarks();
 }
 
@@ -305,6 +482,7 @@ async function place(point) {
   }
   if (state.tool === "probe" || state.report) return probe(point);
   const current = chosen();
+  state.segment = null;
   if (state.tool === "box") {
     if (!state.boxStart) {
       state.boxStart = point;
@@ -345,6 +523,8 @@ async function openReport(id, existing = null) {
   state.report = saved;
   state.tool = "probe";
   state.boxStart = state.highlight = null;
+  state.segment = saved.placement_adopted && saved.placement?.selected
+    ? [saved.placement.selected.start, saved.placement.selected.end] : null;
   el("probe-result").textContent = "";
   el("saved-date").textContent = saved.created.slice(0, 10);
   const download = path("/reports/" + saved.id);
@@ -370,9 +550,13 @@ el("intake").onsubmit = run(async event => {
   notice("Photos imported.");
 });
 el("live").onclick = run(() => open(state.panel.id));
-settings.onsubmit = run(measure);
+settings.onsubmit = run(async () => {
+  state.segment = null;
+  await measure();
+});
 fields.mode.onchange = run(async () => {
   state.mode = fields.mode.value;
+  state.segment = null;
   updateControls();
   await measure();
 });
@@ -401,10 +585,12 @@ el("coordinates").onsubmit = run(event => {
 });
 el("save-setup").onclick = run(async () => {
   const generation = ++state.generation;
+  state.segment = null;
   const panel = await api(path("/settings"), "PUT", {revision:state.panel.revision, settings:chosen()});
   if (generation !== state.generation) return;
   state.panel = panel;
   fill(panel.settings);
+  updateControls();
   await measure();
   notice("Setup saved.");
 });

@@ -43,4 +43,9 @@ def overlay(path, report):
             if kind == "outline":
                 points.append(points[0])
             draw.line(points, fill=color, width=2)
+            if kind == "segment" and len(points) == 2:
+                # End ticks make the recommended placement range readable on the photo.
+                tick = 6
+                for x, y in points:
+                    draw.line((x, y - tick, x, y + tick), fill=color, width=3)
     return encode(Image.alpha_composite(original, layer).convert("RGB"))

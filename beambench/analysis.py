@@ -5,7 +5,7 @@ import numpy as np
 
 from image_lab.validation import Invalid
 
-from . import frame, model
+from . import frame, model, placement
 
 
 def result(mode, columns, rows, summary, marks=(), chart=()):
@@ -31,17 +31,35 @@ def profile(light, settings, mode):
     left, top, right, bottom = settings["box"]
     if mode == "across":
         y = settings["row"]
-        coords = [(x, y) for x in range(left, right + 1)]
+        full_coords = [(x, y) for x in range(left, right + 1)]
     else:
         x = settings["column"]
-        coords = [(x, y) for y in range(top, bottom + 1)]
-    values = np.array([light[y, x] for x, y in coords])
+        full_coords = [(x, y) for y in range(top, bottom + 1)]
+    full_values = np.array([light[y, x] for x, y in full_coords])
+    # The finder always reads the full line, even while an adopted segment
+    # narrows the reported measurement.
+    chosen_range, finder = placement.recommend(
+        full_values, settings["place_min"], settings["place_width"], settings["place_tol"])
+    segment = settings["place_segment"]
+    adopted = segment is not None
+    if adopted:
+        start, end = segment
+        coords = full_coords[start:end + 1]
+        values = full_values[start:end + 1]
+    else:
+        coords, values = full_coords, full_values
     rows = [{"x": x, "y": y, "luma": round(float(value), 3)} for (x, y), value in zip(coords, values)]
     stats = statistics(values)
-    return result(mode, ["x", "y", "luma"], rows,
-                  {"Samples": len(rows), "Average": stats["mean"], "Spread": stats["spread"]},
-                  [{"kind": "line", "points": [coords[0], coords[-1]]}],
-                  [row["luma"] for row in rows])
+    marks = [{"kind": "line", "points": [coords[0], coords[-1]]}]
+    if not adopted and chosen_range is not None:
+        first, last = chosen_range
+        marks.append({"kind": "segment", "points": [full_coords[first], full_coords[last]]})
+    return {
+        **result(mode, ["x", "y", "luma"], rows,
+                 {"Samples": len(rows), "Average": stats["mean"], "Spread": stats["spread"]},
+                 marks, [row["luma"] for row in rows]),
+        "placement": finder, "placement_adopted": adopted,
+    }
 
 
 def grid_boxes(box, divisions=6):
