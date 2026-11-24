@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BeamBench — Lighting Desk</title>
+  <link rel="stylesheet" href="/static/beam.css">
+  <script src="/static/beam.js" defer></script>
+</head>
+<body>
+<header class="mast">
+  <div class="brand"><span class="brand-icon" aria-hidden="true">✳</span><span>BeamBench <small>LIGHTING DESK</small></span></div>
+  <nav><a href="/prepare" id="prepare">Photo preparation <span aria-hidden="true">↗</span></a><button class="primary" id="demo">Open synthetic sample</button></nav>
+</header>
+<main>
+  <aside class="library">
+    <h2>Lighting tests</h2>
+    <div id="panels" class="list"></div>
+    <details open class="upload">
+      <summary>Import photos</summary>
+      <form id="intake">
+        <label>Test name <input name="title" maxlength="80" placeholder="Tabletop setup"></label>
+        <label>Main photo <input type="file" name="a" accept="image/png,image/jpeg" required></label>
+        <label>Aligned reference <input type="file" name="b" accept="image/png,image/jpeg"></label>
+        <button type="submit">Import photos</button>
+      </form>
+    </details>
+    <section id="archives" hidden><h2>Saved inspections</h2><div id="reports" class="list"></div></section>
+  </aside>
+
+  <div id="empty" class="empty">
+    <div class="empty-light"></div>
+    <h1>Check the light before the shoot.</h1>
+    <p>Import a tabletop test photo or open a synthetic sample to measure how the light falls across the frame.</p>
+    <button type="button" class="primary" id="empty-demo">Open sample</button>
+  </div>
+
+  <div id="desk" hidden>
+    <div class="workspace-head">
+      <div><h1 id="title"></h1><p id="source-note"></p></div>
+      <div class="workspace-actions"><a id="source-link" class="action" download>Original photo ↓</a><button id="save-report" class="primary">Save inspection</button><button id="live" hidden>Return to live test</button></div>
+    </div>
+    <div class="workgrid">
+      <section class="view card" aria-label="Source photograph">
+        <div class="photo-tools" id="tools">
+          <button data-tool="probe" aria-pressed="true">Pixel probe</button>
+          <button data-tool="box" aria-pressed="false">Set box</button>
+          <button data-tool="row" aria-pressed="false">Set row</button>
+          <button data-tool="column" aria-pressed="false">Set column</button>
+          <button data-tool="origin" aria-pressed="false">Set origin</button>
+        </div>
+        <div id="stage"><img id="photo" alt="Source light test" draggable="false"><canvas id="marks" aria-hidden="true"></canvas></div>
+        <div class="image-footer"><span id="tool-note">Click the photo to read its RGB and brightness.</span><output id="probe-result" aria-live="polite"></output></div>
+      </section>
+
+      <section class="side card" id="live-controls">
+        <form id="settings">
+          <div class="side-head"><div><h2>Measurement</h2><p>Brightness values are relative to the photo.</p></div></div>
+          <label>Photo <select name="source" id="source"></select></label>
+          <label>Inspection <select name="mode" id="mode">{% for key, label in modes.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}</select></label>
+          <fieldset><legend>Inspection box <small>original px</small></legend>
+            <div class="fieldgrid box-fields">
+              <label>Left <input type="number" min="0" step="1" name="left" required></label>
+              <label>Top <input type="number" min="0" step="1" name="top" required></label>
+              <label>Right <input type="number" min="0" step="1" name="right" required></label>
+              <label>Bottom <input type="number" min="0" step="1" name="bottom" required></label>
+            </div>
+          </fieldset>
+          <fieldset id="sampling-fields"><legend>Sampling</legend>
+            <div class="fieldgrid">
+              <label data-for="across">Profile row <input type="number" min="0" step="1" name="row" required></label>
+              <label data-for="down">Profile column <input type="number" min="0" step="1" name="column" required></label>
+              <label data-for="footprint">Light level <input type="number" min="0" max="255" step="any" name="threshold" required></label>
+              <label data-for="clipping">Shadow level <input type="number" min="0" max="254" step="any" name="clip_low" required></label>
+              <label data-for="clipping">Highlight level <input type="number" min="1" max="255" step="any" name="clip_high" required></label>
+              <label data-for="falloff">Origin X <input type="number" min="0" name="originX" required></label>
+              <label data-for="falloff">Origin Y <input type="number" min="0" name="originY" required></label>
+              <label data-for="falloff">Band step <input type="number" min="4" max="512" name="radius_step" required></label>
+            </div>
+          </fieldset>
+          <div class="form-actions"><button type="submit" class="primary">Measure</button><button type="button" id="save-setup">Save setup</button></div>
+        </form>
+        <form id="coordinates" class="coordinate">
+          <label>X <input name="x" type="number" min="0" value="0" required></label>
+          <label>Y <input name="y" type="number" min="0" value="0" required></label>
+          <button type="submit">Set point</button>
+        </form>
+      </section>
+
+      <section class="side card" id="saved-controls" hidden>
+        <h2>Saved inspection</h2>
+        <p id="saved-date"></p>
+        <div id="downloads" class="download-list">
+          <a id="csv" class="action" download>Report CSV ↓</a>
+          <a id="overlay" class="action" download>Marked photo ↓</a>
+        </div>
+      </section>
+    </div>
+
+    <section id="results" class="results card" aria-labelledby="result-title">
+      <div class="results-head"><h2 id="result-title">Horizontal profile</h2><span id="result-source"></span></div>
+      <div id="measures" class="measures"></div>
+      <canvas id="chart" width="1000" height="126" aria-label="Brightness across sampled positions" role="img" hidden></canvas>
+      <div id="rows" class="table-scroll"></div>
+    </section>
+  </div>
+  <div id="status" role="status"></div>
+</main>
+</body>
+</html>

@@ -1,0 +1,23 @@
+name: solo92-beambench
+services:
+  desk:
+    build:
+      context: .
+      args:
+        BEAMBENCH_RUNTIME_IMAGE: ${BEAMBENCH_RUNTIME_IMAGE:-python:3.12-slim}
+    image: ${BEAMBENCH_IMAGE:-solo92-beambench:1.0}
+    network_mode: bridge
+    environment:
+      OPENBLAS_NUM_THREADS: 1
+      OMP_NUM_THREADS: 1
+    ports:
+      - "127.0.0.1:${BEAMBENCH_PORT:-19892}:8000"
+    volumes:
+      - beam-data:/var/lib/beambench
+    healthcheck:
+      test: ["CMD", "python", "-c", "from urllib.request import urlopen; assert urlopen('http://127.0.0.1:8000/beam/health', timeout=3).status == 200"]
+      interval: 3s
+      timeout: 4s
+      retries: 12
+volumes:
+  beam-data:
