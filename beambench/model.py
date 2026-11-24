@@ -64,7 +64,7 @@ def defaults(width, height):
     return {
         "box": [0, 0, width - 1, height - 1], "row": height // 2, "column": width // 2,
         "origin": [width // 2, height // 2], "source": "a", "threshold": 140,
-        "clip_low": 10, "clip_high": 245, "radius_step": 20,
+        "clip_low": 10, "clip_high": 245, "radius_step": 20, "shift_x": 0,
     }
 
 
@@ -87,6 +87,7 @@ def settings(record, submitted):
         "source": role, "threshold": number(options["threshold"], 0, 255, "Light level"),
         "clip_low": clip_low, "clip_high": clip_high,
         "radius_step": integer(options["radius_step"], 4, 512, "Radial step"),
+        "shift_x": integer(options.get("shift_x", 0), -1024, 1024, "Reference shift X"),
     }
 
 

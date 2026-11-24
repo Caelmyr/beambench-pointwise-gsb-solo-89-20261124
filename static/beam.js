@@ -2,7 +2,7 @@ const el = id => document.getElementById(id);
 const settings = el("settings");
 const fields = settings.elements;
 const state = {panel: null, result: null, report: null, mode: "across", tool: "probe",
-  boxStart: null, highlight: null, generation: 0};
+  boxStart: null, highlight: null, alignment: null, generation: 0};
 const base = "/beam/panels";
 const toolNotes = {
   probe:"Click the photo to read its RGB and brightness.", box:"Pick two corners of the inspection box.",
@@ -86,6 +86,7 @@ function fill(current) {
   for (const key of ["source", "row", "column", "threshold", "clip_low", "clip_high", "radius_step"]) {
     fields[key].value = current[key];
   }
+  fields.shift_x.value = current.shift_x ?? 0;
   [fields.left.value, fields.top.value, fields.right.value, fields.bottom.value] = box;
   [fields.originX.value, fields.originY.value] = origin;
 }
@@ -96,13 +97,20 @@ function chosen() {
     box:["left", "top", "right", "bottom"].map(val), row:val("row"), column:val("column"),
     origin:["originX", "originY"].map(val), source:fields.source.value, threshold:val("threshold"),
     clip_low:val("clip_low"), clip_high:val("clip_high"), radius_step:val("radius_step"),
+    shift_x:val("shift_x"),
   };
+}
+
+function clearAlignment() {
+  state.alignment = null;
+  el("alignment").hidden = true;
 }
 
 function updateControls() {
   const visible = [...settings.querySelectorAll("[data-for]")];
   for (const label of visible) label.hidden = label.dataset.for !== state.mode;
   el("sampling-fields").hidden = visible.every(label => label.hidden);
+  el("suggest-shift").hidden = state.mode !== "compare" || !state.panel.sources.b;
   fields.mode.value = state.mode;
   for (const control of el("tools").querySelectorAll("button")) {
     control.hidden = Boolean(state.report) && control.dataset.tool !== "probe";
@@ -136,6 +144,7 @@ async function open(id, existing = null) {
   if (generation !== state.generation) return;
   state.panel = panel;
   state.result = state.report = state.boxStart = state.highlight = null;
+  clearAlignment();
   state.mode = "across";
   state.tool = "probe";
   localStorage.setItem("beambench-panel", panel.id);
@@ -160,6 +169,14 @@ function trace(canvas, mark) {
     ctx.fillRect(l, t, r - l + 1, b - t + 1);
     ctx.strokeStyle = "rgba(225,232,244,.57)";
     ctx.rect(l, t, r - l + 1, b - t + 1);
+  } else if (mark.kind === "support") {
+    const [x, y] = mark.center;
+    const r = Math.max(4, canvas.width / 180);
+    ctx.strokeStyle = "#8df5a9";
+    ctx.moveTo(x - r, y);
+    ctx.lineTo(x + r, y);
+    ctx.moveTo(x, y - r);
+    ctx.lineTo(x, y + r);
   } else {
     ctx.strokeStyle = "#ffd065";
     if (mark.kind === "circle") {
@@ -187,6 +204,10 @@ function drawMarks() {
     const [l, t, r, b] = current.settings.box;
     ctx.strokeStyle = "#4fe1df";
     ctx.strokeRect(l + .5, t + .5, r - l, b - t);
+  }
+  if (state.alignment) {
+    ctx.lineWidth = Math.max(1, width / 465);
+    for (const mark of state.alignment.marks) trace(canvas, mark);
   }
   if (state.highlight || state.boxStart) {
     const [x, y] = state.highlight || state.boxStart;
@@ -260,6 +281,7 @@ function table(display) {
 
 function show(display) {
   state.result = display;
+  clearAlignment();
   el("result-title").textContent = display.heading;
   el("result-source").textContent = display.source === "a" ? "Main photo" : "Reference photo";
   const measures = Object.entries(display.summary).map(([name, value]) => {
@@ -289,12 +311,20 @@ async function measure() {
 
 async function probe(point) {
   const generation = state.generation;
-  const data = state.report ? {point, report:state.report.id} : {point, settings:chosen()};
+  const data = state.report ? {point, report:state.report.id} : {point, settings:chosen(), mode:state.mode};
   const sample = await api(path("/point"), "POST", data);
   if (generation !== state.generation) return;
   state.highlight = [sample.x, sample.y];
-  el("probe-result").textContent = "(" + sample.x + ", " + sample.y + ") · RGB " +
-    sample.rgb.join(" / ") + " · brightness " + sample.luma;
+  let text = "(" + sample.x + ", " + sample.y + ") · RGB " + sample.rgb.join(" / ") +
+    " · brightness " + sample.luma;
+  if ("counterpart" in sample) {
+    const other = sample.counterpart;
+    text += other
+      ? " ⇄ " + (other.source === "a" ? "main" : "reference") + " (" + other.x + ", " + other.y +
+        ") · RGB " + other.rgb.join(" / ") + " · brightness " + other.luma
+      : " ⇄ outside the other photo — left blank, not dark";
+  }
+  el("probe-result").textContent = text;
   drawMarks();
 }
 
@@ -407,6 +437,23 @@ el("save-setup").onclick = run(async () => {
   fill(panel.settings);
   await measure();
   notice("Setup saved.");
+});
+el("suggest-shift").onclick = run(async () => {
+  const result = await api(path("/alignment"), "POST", {settings:chosen()});
+  state.alignment = result;
+  el("alignment-note").textContent = result.note;
+  el("adopt-shift").hidden = !result.reliable;
+  el("alignment").hidden = false;
+  drawMarks();
+});
+el("adopt-shift").onclick = run(async () => {
+  fields.shift_x.value = state.alignment.shift_x;
+  await measure();
+  notice("Shift adopted; cell differences use only pixels present in both photos.");
+});
+el("dismiss-shift").onclick = run(() => {
+  clearAlignment();
+  drawMarks();
 });
 el("save-report").onclick = run(async () => {
   const generation = ++state.generation;

@@ -50,6 +50,10 @@
           <button data-tool="origin" aria-pressed="false">Set origin</button>
         </div>
         <div id="stage"><img id="photo" alt="Source light test" draggable="false"><canvas id="marks" aria-hidden="true"></canvas></div>
+        <div id="alignment" class="alignment" hidden>
+          <span id="alignment-note"></span>
+          <span class="alignment-actions"><button type="button" id="adopt-shift" class="primary">Adopt shift</button><button type="button" id="dismiss-shift">Dismiss</button></span>
+        </div>
         <div class="image-footer"><span id="tool-note">Click the photo to read its RGB and brightness.</span><output id="probe-result" aria-live="polite"></output></div>
       </section>
 
@@ -76,9 +80,10 @@
               <label data-for="falloff">Origin X <input type="number" min="0" name="originX" required></label>
               <label data-for="falloff">Origin Y <input type="number" min="0" name="originY" required></label>
               <label data-for="falloff">Band step <input type="number" min="4" max="512" name="radius_step" required></label>
+              <label data-for="compare">Reference shift X <input type="number" min="-1024" max="1024" step="1" name="shift_x" required></label>
             </div>
           </fieldset>
-          <div class="form-actions"><button type="submit" class="primary">Measure</button><button type="button" id="save-setup">Save setup</button></div>
+          <div class="form-actions"><button type="submit" class="primary">Measure</button><button type="button" id="save-setup">Save setup</button><button type="button" id="suggest-shift" hidden>Suggest shift</button></div>
         </form>
         <form id="coordinates" class="coordinate">
           <label>X <input name="x" type="number" min="0" value="0" required></label>

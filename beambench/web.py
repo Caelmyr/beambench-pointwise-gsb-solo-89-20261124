@@ -7,7 +7,7 @@ from flask import Blueprint, Response, jsonify, render_template, request, send_f
 
 from image_lab.validation import Invalid
 
-from . import analysis, demo, frame, model, output
+from . import alignment, analysis, demo, frame, model, output
 from .store import Library
 
 
@@ -97,15 +97,39 @@ def install(app, root):
         record = library.panel(panel_id)
         return jsonify(measurement(record, payload()))
 
+    @desk.post("/panels/<panel_id>/alignment")
+    def align(panel_id):
+        record = library.panel(panel_id)
+        if "b" not in record["sources"]:
+            raise Invalid("Add a second aligned photo to compare lighting.")
+        settings = model.settings(record, payload().get("settings", {}))
+        main = frame.pixels(library, record, "a")
+        reference = frame.pixels(library, record, "b")
+        return jsonify(alignment.suggest(main, reference, settings["box"]))
+
     @desk.post("/panels/<panel_id>/point")
     def sample(panel_id):
         data = payload()
         saved_id = data.get("report")
         record = library.report(panel_id, saved_id) if saved_id else library.panel(panel_id)
-        role = record["source"] if saved_id else model.settings(record, data.get("settings", {}))["source"]
+        current = record["settings"] if saved_id else model.settings(record, data.get("settings", {}))
+        role = current["source"]
         x, y = model.point(data.get("point"), record["width"], record["height"])
         rgb = frame.pixels(library, record, role)[y, x]
-        return jsonify(x=x, y=y, rgb=rgb.tolist(), luma=round(float(frame.luma(rgb)), 3), source=role)
+        answer = {"x": x, "y": y, "rgb": rgb.tolist(), "luma": round(float(frame.luma(rgb)), 3),
+                  "source": role}
+        other = "b" if role == "a" else "a"
+        mode = record.get("mode") if saved_id else data.get("mode")
+        if mode == "compare" and other in record["sources"]:
+            shift = current.get("shift_x", 0) if role == "a" else -current.get("shift_x", 0)
+            cx = x + shift
+            if 0 <= cx < record["width"]:
+                rgb = frame.pixels(library, record, other)[y, cx]
+                answer["counterpart"] = {"x": cx, "y": y, "rgb": rgb.tolist(),
+                                         "luma": round(float(frame.luma(rgb)), 3), "source": other}
+            else:
+                answer["counterpart"] = None
+        return jsonify(answer)
 
     @desk.post("/panels/<panel_id>/reports")
     def retain(panel_id):

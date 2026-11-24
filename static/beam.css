@@ -54,6 +54,9 @@ input::file-selector-button { color:var(--text); border:0; background:var(--rais
 #stage canvas { pointer-events:none; }
 .image-footer { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; padding:10px 11px; font-size:.77rem; color:var(--muted); min-height:37px; }
 #probe-result { color:var(--cyan); font-variant-numeric:tabular-nums; }
+.alignment { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; padding:8px 11px; border-top:1px solid var(--line); font-size:.78rem; color:var(--muted); }
+.alignment-actions { display:flex; gap:6px; }
+.alignment-actions button { padding:4px 9px; font-size:.76rem; }
 .side { align-self:start; padding:13px; }
 .side form { display:grid; gap:9px; }
 fieldset { border:1px solid var(--line); border-radius:7px; padding:7px; margin:2px 0 0; min-width:0; }

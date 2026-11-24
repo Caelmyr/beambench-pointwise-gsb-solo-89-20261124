@@ -151,18 +151,38 @@ def color_cast(rgb, settings):
 
 def comparison(light, other, settings):
     rows, marks = [], []
-    base = box_view(light, settings["box"])
-    counterpart = box_view(other, settings["box"])
+    width = light.shape[1]
+    # A positive shift means the reference photo's content sits that many pixels to the
+    # right of the active photo; only the overlapping columns carry both photos' pixels.
+    direction = settings["shift_x"] if settings["source"] == "a" else -settings["shift_x"]
+    left, top, right, bottom = settings["box"]
+    low, high = max(left, -direction), min(right, width - 1 - direction)
+    if low > high:
+        raise Invalid("The shift moves the reference photo outside the inspection box.")
     for index, cell in grid_boxes(settings["box"], 4):
-        source, reference = box_view(light, cell), box_view(other, cell)
+        cell_left, cell_top, cell_right, cell_bottom = cell
+        lo, hi = max(cell_left, low), min(cell_right, high)
         x, y = center(cell)
-        shift = float((source - reference).mean())
+        if lo > hi:
+            rows.append({"cell": index, "x": x, "y": y, "active": None, "reference": None,
+                         "change": None, "pixels": 0})
+            continue
+        source = box_view(light, [lo, cell_top, hi, cell_bottom])
+        reference = box_view(other, [lo + direction, cell_top, hi + direction, cell_bottom])
+        change = float((source - reference).mean())
         rows.append({"cell": index, "x": x, "y": y, "active": round(float(source.mean()), 2),
-                     "reference": round(float(reference.mean()), 2), "change": round(shift, 2)})
-        marks.append({"kind": "rect", "box": cell, "level": min(abs(shift) * 5, 255)})
-    return result("compare", ["cell", "x", "y", "active", "reference", "change"], rows,
-                  {"Compared pixels": base.size, "Mean difference": round(float((base - counterpart).mean()), 2),
-                   "Mean absolute": round(float(np.abs(base - counterpart).mean()), 2)}, marks)
+                     "reference": round(float(reference.mean()), 2), "change": round(change, 2),
+                     "pixels": int(source.size)})
+        marks.append({"kind": "rect", "box": [lo, cell_top, hi, cell_bottom],
+                      "level": min(abs(change) * 5, 255)})
+    base = box_view(light, [low, top, high, bottom])
+    counterpart = box_view(other, [low + direction, top, high + direction, bottom])
+    return result("compare", ["cell", "x", "y", "active", "reference", "change", "pixels"], rows,
+                  {"Compared pixels": int(base.size),
+                   "Mean difference": round(float((base - counterpart).mean()), 2),
+                   "Mean absolute": round(float(np.abs(base - counterpart).mean()), 2),
+                   "Reference shift X": direction,
+                   "Box overlap %": round(100 * (high - low + 1) / (right - left + 1), 1)}, marks)
 
 
 def inspect(library, record, mode, settings):
