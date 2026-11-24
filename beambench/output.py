@@ -7,6 +7,9 @@ from PIL import Image, ImageDraw
 
 from .frame import encode
 
+CLIP_COLORS = {"single": (255, 208, 101, 255), "multi": (255, 72, 72, 255)}
+LAYERS = {"rect": 0, "circle": 1, "outline": 1, "line": 1, "clip_pixels": 2}
+
 
 def table(report):
     text = StringIO(newline="")
@@ -28,12 +31,16 @@ def overlay(path, report):
     box = report["settings"]["box"]
     draw.rectangle(tuple(box), outline=(79, 225, 223, 255), width=2)
     color = (255, 208, 101, 255)
-    for item in report["marks"]:
+    for item in sorted(report["marks"], key=lambda item: LAYERS.get(item["kind"], 1)):
         kind = item["kind"]
         if kind == "rect":
             level = item["level"]
             shade = (255, int(80 + level * 0.45), 48, int(20 + level * 0.44))
             draw.rectangle(tuple(item["box"]), fill=shade, outline=(225, 232, 244, 128), width=1)
+        elif kind == "clip_pixels":
+            fill = CLIP_COLORS[item["class"]]
+            for top, start, stop in item["runs"]:
+                draw.line((start, top, stop, top), fill=fill, width=1)
         elif kind == "circle":
             x, y = item["center"]
             r = item["radius"]

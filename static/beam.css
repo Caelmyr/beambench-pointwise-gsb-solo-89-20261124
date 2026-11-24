@@ -78,6 +78,11 @@ td,th { text-align:right; padding:5px 8px; border-bottom:1px solid #303846; }
 th { position:sticky; top:0; background:var(--panel); text-transform:capitalize; color:var(--muted); }
 td:has(button),th:last-child { text-align:left; }
 td button { padding:2px 5px; font-size:.73rem; }
+.legend { display:flex; align-items:center; flex-wrap:wrap; gap:6px 8px; margin-top:8px; color:var(--muted); font-size:.74rem; }
+.swatch { width:11px; height:11px; border-radius:2px; display:inline-block; }
+.swatch.single { background:var(--warm); }
+.swatch.multi { background:#ff4848; }
+.legend .swatch:not(:first-child) { margin-left:8px; }
 .empty { display:grid; justify-items:center; align-content:center; text-align:center; gap:19px; min-height:70vh; border:1px solid var(--line); border-radius:12px; background:radial-gradient(ellipse at 47% 33%,#37304a 0%,#1b202c 33%,#181b25 65%); padding:24px; }
 .empty p { max-width:390px; color:var(--muted); }
 .empty-light { width:130px; height:92px; border-radius:50%; background:radial-gradient(ellipse,#ffe4a0,#a96141 38%,transparent 71%); filter:blur(7px); }

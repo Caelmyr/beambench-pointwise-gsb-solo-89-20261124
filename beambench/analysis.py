@@ -7,6 +7,10 @@ from image_lab.validation import Invalid
 
 from . import frame, model
 
+CLIPPING_NOISE_FLOOR = 4
+CLIPPING_MARK_BUDGET = 100_000
+CHANNELS = ("R", "G", "B")
+
 
 def result(mode, columns, rows, summary, marks=(), chart=()):
     return {
@@ -120,20 +124,133 @@ def falloff(light, settings):
                   [row["luma"] for row in rows])
 
 
-def clipping(light, settings):
+def _pixel_runs(classes, left, top):
+    """Row spans per channel class, in original photo coordinates."""
+    runs = {"single": [], "multi": []}
+    for name, value in (("single", 1), ("multi", 2)):
+        for row in range(classes.shape[0]):
+            padded = np.concatenate(([0], (classes[row] == value).astype(np.int8), [0]))
+            edges = np.flatnonzero(np.diff(padded))
+            for start, stop in zip(edges[::2], edges[1::2]):
+                runs[name].append([row + top, int(start) + left, int(stop) + left - 1])
+    return runs
+
+
+def _region_reason(best, other):
+    def label(item):
+        return f"{item['channels']} region ({item['area']} px, {item['samples']} clipped channel values)"
+    if other is None:
+        return f"Only clipped region in this cell: {label(best)}."
+    if best["samples"] != other["samples"]:
+        basis = f"{best['samples']} vs {other['samples']} clipped channel values"
+    elif best["area"] != other["area"]:
+        basis = f"{best['area']} vs {other['area']} clipped pixels"
+    elif len(best["channel_set"]) != len(other["channel_set"]):
+        basis = f"{len(best['channel_set'])} vs {len(other['channel_set'])} lost channels"
+    else:
+        basis = "nearer the cell center"
+    return f"Re-shoot {label(best)} before {label(other)}: {basis}."
+
+
+def _cell_regions(shaded, labels, channels, keep, cell, box):
+    """Clipped regions of one grid cell, ranked by actual area and lost channels."""
+    column, row = cell[0] - box[0], cell[1] - box[1]
+    height, width = cell[3] - cell[1] + 1, cell[2] - cell[0] + 1
+    local = labels[row:row + height, column:column + width]
+    counts = channels[row:row + height, column:column + width]
+    clipped = shaded[row:row + height, column:column + width]
+    flat = local.ravel()
+    marked = flat > 0
+    if not marked.any():
+        return None, None
+    ids, inverse = np.unique(flat[marked], return_inverse=True)
+    size = np.bincount(inverse).astype(float)
+    size[~keep[ids] | (size < CLIPPING_NOISE_FLOOR)] = 0
+    if not size.any():
+        return None, None
+    weights = np.maximum(size, 1)
+    samples = np.bincount(inverse, weights=counts.ravel()[marked].astype(float))
+    single = np.bincount(inverse, weights=counts.ravel()[marked] == 1)
+    multi = np.bincount(inverse, weights=counts.ravel()[marked] >= 2)
+    lost = np.array([np.bincount(inverse, weights=clipped[..., index].ravel()[marked].astype(float))
+                     for index in range(3)]) > 0
+    ys, xs = np.divmod(np.flatnonzero(marked), width)
+    centroid_x = np.bincount(inverse, weights=xs.astype(float)) / weights
+    centroid_y = np.bincount(inverse, weights=ys.astype(float)) / weights
+    reach = (centroid_x - width / 2) ** 2 + (centroid_y - height / 2) ** 2
+    reach[size == 0] = np.inf
+    order = np.lexsort((reach, -size, -lost.sum(axis=0), -samples))[:2]
+    candidates = []
+    for position in order:
+        identifier = int(ids[position])
+        if not size[position]:
+            continue
+        mask = local == identifier
+        found = [CHANNELS[index] for index in range(3) if lost[index, position]]
+        nearest = _nearest(mask, centroid_x[position], centroid_y[position])
+        candidates.append({
+            "id": identifier, "area": int(size[position]), "samples": int(samples[position]),
+            "channel_set": found, "channels": "+".join(found),
+            "single": int(single[position]), "multi": int(multi[position]),
+            "mask": mask, "counts": counts,
+            "pick": [nearest[0] + cell[0], nearest[1] + cell[1]],
+        })
+    best = candidates[0] if candidates else None
+    return best, (candidates[1] if len(candidates) > 1 else None)
+
+
+def _nearest(mask, x, y):
+    ys, xs = np.nonzero(mask)
+    index = int(np.argmin((xs - x) ** 2 + (ys - y) ** 2))
+    return int(xs[index]), int(ys[index])
+
+
+def clipping(light, rgb, settings):
     rows, marks = [], []
     low, high = settings["clip_low"], settings["clip_high"]
-    for index, cell in grid_boxes(settings["box"], 4):
+    box = settings["box"]
+    shaded = box_view(rgb, box) >= high
+    channels = shaded.sum(axis=2)
+    union = (channels > 0).astype("uint8")
+    count, labels, info, _ = cv2.connectedComponentsWithStats(union, connectivity=8)
+    areas = info[:, cv2.CC_STAT_AREA]
+    keep = (areas >= CLIPPING_NOISE_FLOOR) & (np.arange(count) > 0)
+    specks = np.array([identifier for identifier in range(1, count)
+                       if 0 < int(areas[identifier]) < CLIPPING_NOISE_FLOOR], dtype=int)
+    speck_pixels = int(areas[specks].sum()) if specks.size else 0
+    picks = singles = multis = 0
+    for index, cell in grid_boxes(box, 4):
         values = box_view(light, cell)
         shadows = int(np.count_nonzero(values <= low))
         highlights = int(np.count_nonzero(values >= high))
         x, y = center(cell)
-        rows.append({"cell": index, "x": x, "y": y, "dark": shadows, "bright": highlights, "pixels": values.size})
+        row = {"cell": index, "x": x, "y": y, "dark": shadows, "bright": highlights,
+               "pixels": values.size, "pick_x": "", "pick_y": "", "area": "", "channels": "",
+               "single": "", "multi": "", "why": ""}
+        best, other = _cell_regions(shaded, labels, channels, keep, cell, box)
         fraction = min(255, (shadows + highlights) * 255 / values.size)
         marks.append({"kind": "rect", "box": cell, "level": fraction})
-    return result("clipping", ["cell", "x", "y", "dark", "bright", "pixels"], rows,
+        if best:
+            singles += best["single"]
+            multis += best["multi"]
+            row.update({"pick_x": best["pick"][0], "pick_y": best["pick"][1], "area": best["area"],
+                        "channels": best["channels"], "single": best["single"], "multi": best["multi"],
+                        "why": _region_reason(best, other)})
+            classes = best["mask"] * np.where(best["counts"] >= 2, 2, 1).astype("uint8")
+            runs = _pixel_runs(classes, cell[0], cell[1])
+            for name in ("single", "multi"):
+                for chunk in range(0, len(runs[name]), CLIPPING_MARK_BUDGET):
+                    marks.append({"kind": "clip_pixels", "class": name,
+                                  "runs": runs[name][chunk:chunk + CLIPPING_MARK_BUDGET]})
+            picks += 1
+        rows.append(row)
+    return result("clipping", ["cell", "x", "y", "dark", "bright", "pixels", "pick_x", "pick_y",
+                               "area", "channels", "single", "multi", "why"], rows,
                   {"Dark pixels": sum(row["dark"] for row in rows),
-                   "Bright pixels": sum(row["bright"] for row in rows), "Levels": f"{low} · {high}"}, marks)
+                   "Bright pixels": sum(row["bright"] for row in rows), "Levels": f"{low} · {high}",
+                   "Re-shoot regions": picks, "Single-channel px": singles,
+                   "Multi-channel px": multis, "Ignored specks": f"{len(specks)} · {speck_pixels} px"},
+                  marks)
 
 
 def color_cast(rgb, settings):
@@ -179,5 +296,7 @@ def inspect(library, record, mode, settings):
         measured = comparison(light, frame.luma(frame.pixels(library, record, other)), settings)
         measured["comparison_source"] = other
         return measured
-    handlers = {"map": level_map, "footprint": footprint, "falloff": falloff, "clipping": clipping}
+    handlers = {"map": level_map, "footprint": footprint, "falloff": falloff}
+    if mode == "clipping":
+        return clipping(light, rgb, settings)
     return handlers[mode](light, settings)

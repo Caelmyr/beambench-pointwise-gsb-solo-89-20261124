@@ -151,6 +151,8 @@ async function open(id, existing = null) {
   await Promise.all([showLibrary(), measure()]);
 }
 
+const clipColors = {single:"#ffd065", multi:"#ff4848"};
+
 function trace(canvas, mark) {
   const ctx = canvas.getContext("2d");
   ctx.beginPath();
@@ -160,6 +162,10 @@ function trace(canvas, mark) {
     ctx.fillRect(l, t, r - l + 1, b - t + 1);
     ctx.strokeStyle = "rgba(225,232,244,.57)";
     ctx.rect(l, t, r - l + 1, b - t + 1);
+  } else if (mark.kind === "clip_pixels") {
+    ctx.fillStyle = clipColors[mark.class];
+    for (const [y, x0, x1] of mark.runs) ctx.fillRect(x0, y, x1 - x0 + 1, 1);
+    return;
   } else {
     ctx.strokeStyle = "#ffd065";
     if (mark.kind === "circle") {
@@ -251,7 +257,9 @@ function table(display) {
     const tr = body.insertRow();
     for (const column of columns) tr.insertCell().textContent = row[column];
     if (hasLocation) {
-      const link = button("Probe " + row.x + ", " + row.y, () => probe([row.x, row.y]));
+      const px = Number.isFinite(row.pick_x) ? row.pick_x : row.x;
+      const py = Number.isFinite(row.pick_y) ? row.pick_y : row.y;
+      const link = button("Probe " + px + ", " + py, () => probe([px, py]));
       tr.insertCell().append(link);
     }
   }
@@ -273,6 +281,7 @@ function show(display) {
     return card;
   });
   list(el("measures"), measures);
+  el("clip-legend").hidden = display.mode !== "clipping";
   drawChart(display.chart);
   table(display);
   drawMarks();

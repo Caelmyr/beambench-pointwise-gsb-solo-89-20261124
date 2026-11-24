@@ -11,7 +11,15 @@ to stop the service while retaining the named volume.
    The numeric controls accept original photo coordinates.
 3. Use **Pixel probe** or click a result row to check its position and RGB.
    Inspect the grid illumination map, thresholded footprint, radial falloff,
-   clipped tones, color cast, or aligned photo comparison.
+   clipped tones, color cast, or aligned photo comparison. **Exposure clipping**
+   keeps its per-cell shadow/highlight counts and also recommends one re-shoot
+   region per cell: highlights are tested per channel at the same level, sparse
+   specks below four connected pixels are ignored, and connected thin edges are
+   kept. The pick maximizes clipped channel values (area × lost channels), so a
+   smaller multi-channel patch can outrank a larger single-channel edge; the
+   row's reason states both and which won. The picked region's actually clipped
+   pixels are marked in the overlay, yellow for single-channel and red for
+   multi-channel; pixels below the level stay unmarked.
 4. Save a setup to use those positions and thresholds again. Save an inspection
    to keep its original source, sampled rows, and marked PNG. Use the direct
    download links after saving or reopening an inspection.
